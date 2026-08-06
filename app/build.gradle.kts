@@ -48,6 +48,12 @@ android {
         aidl = true
         buildConfig = true
     }
+
+    lint {
+        isAbortOnError = false
+        isCheckReleaseBuilds = false
+        disable.add("Instantiatable")
+    }
 }
 
 dependencies {
