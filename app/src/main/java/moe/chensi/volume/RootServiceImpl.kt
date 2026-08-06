@@ -23,14 +23,18 @@ class RootServiceImpl : RootService() {
 
     private val binder = object : IRootService.Stub() {
         override fun getInstalledPackages(): List<PackageInfo> {
-            val MATCH_ANY_USER = 0x00000400
-            val GET_ACTIVITIES = 0x00000001
-            return packageManager.getInstalledPackages(MATCH_ANY_USER or GET_ACTIVITIES)
+            return try {
+                val MATCH_ANY_USER = 0x00000400
+                val GET_ACTIVITIES = 0x00000001
+                packageManager.getInstalledPackages(MATCH_ANY_USER or GET_ACTIVITIES)
+            } catch (e: Exception) {
+                emptyList()
+            }
         }
 
         override fun getForegroundTask(): ComponentName? {
             return try {
-                val atm = getSystemService("activity_task")
+                val atm = getSystemService("activity_task") ?: return null
                 val tasks = Reflect.on(atm).call("getTasks", 1).get<List<ActivityManager.RunningTaskInfo>>()
                 if (!tasks.isNullOrEmpty()) {
                     tasks[0].topActivity
@@ -43,22 +47,22 @@ class RootServiceImpl : RootService() {
         }
 
         override fun getInterruptionFilter(): Int {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            return nm.currentInterruptionFilter
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager?
+            return nm?.currentInterruptionFilter ?: 1 // INTERRUPTION_FILTER_ALL
         }
 
         override fun setInterruptionFilter(filter: Int) {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.setInterruptionFilter(filter)
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager?
+            nm?.setInterruptionFilter(filter)
         }
 
         override fun getActivePlaybackConfigurations(): List<Bundle> {
-            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val configs = am.activePlaybackConfigurations
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager?
+            val configs = am?.activePlaybackConfigurations ?: emptyList()
             val result = ArrayList<Bundle>()
 
-            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            val runningProcesses = activityManager.runningAppProcesses ?: emptyList()
+            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager?
+            val runningProcesses = activityManager?.runningAppProcesses ?: emptyList()
 
             for (config in configs) {
                 try {

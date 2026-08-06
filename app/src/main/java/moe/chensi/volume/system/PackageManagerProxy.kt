@@ -29,7 +29,14 @@ class PackageManagerProxy private constructor(private val context: Context) {
 
     fun getInstalledPackagesForAllUsers(): List<PackageInfo> {
         val appManager = (context.applicationContext as? MyApplication)?.manager
-        return appManager?.rootService?.installedPackages ?: emptyList()
+        return try {
+            appManager?.rootService?.installedPackages ?: emptyList()
+        } catch (e: Exception) {
+            if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
+                appManager?.handleServiceDeath()
+            }
+            emptyList()
+        }
     }
 
     fun getDrawable(packageName: String, resId: Int, appInfo: ApplicationInfo): Drawable? {

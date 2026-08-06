@@ -15,11 +15,24 @@ class NotificationManagerProxy private constructor(private val context: Context)
 
     fun getCurrentInterruptionFilter(): Int {
         val appManager = (context.applicationContext as? MyApplication)?.manager
-        return appManager?.rootService?.interruptionFilter ?: 1
+        return try {
+            appManager?.rootService?.interruptionFilter ?: 1
+        } catch (e: Exception) {
+            if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
+                appManager?.handleServiceDeath()
+            }
+            1
+        }
     }
 
     fun setInterruptionFilter(filter: Int) {
         val appManager = (context.applicationContext as? MyApplication)?.manager
-        appManager?.rootService?.setInterruptionFilter(filter)
+        try {
+            appManager?.rootService?.setInterruptionFilter(filter)
+        } catch (e: Exception) {
+            if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
+                appManager?.handleServiceDeath()
+            }
+        }
     }
 }

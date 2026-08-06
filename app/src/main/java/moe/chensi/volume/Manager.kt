@@ -33,6 +33,11 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
     var rootService: IRootService? = null
         private set
 
+    fun handleServiceDeath() {
+        rootService = null
+        _rootStatus = RootStatus.Denied
+    }
+
     private val rootConnection = object : android.content.ServiceConnection {
         override fun onServiceConnected(name: android.content.ComponentName, service: android.os.IBinder) {
             rootService = IRootService.Stub.asInterface(service)
@@ -121,8 +126,15 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
     }
 
     private fun queryActivePlaybackConfigurations(): List<AudioPlaybackConfigurationProxy> {
-        val bundles = rootService?.activePlaybackConfigurations ?: emptyList()
-        return bundles.map { AudioPlaybackConfigurationProxy(it) }
+        return try {
+            val bundles = rootService?.activePlaybackConfigurations ?: emptyList()
+            bundles.map { AudioPlaybackConfigurationProxy(it) }
+        } catch (e: Exception) {
+            if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
+                handleServiceDeath()
+            }
+            emptyList()
+        }
     }
 
     private fun initialize() {

@@ -10,7 +10,14 @@ class ActivityTaskManagerProxy(private val context: Context) {
 
     fun getForegroundTask(): Task? {
         val appManager = (context.applicationContext as? MyApplication)?.manager
-        val topActivity = appManager?.rootService?.foregroundTask ?: return null
-        return Task(topActivity.packageName, topActivity)
+        return try {
+            val topActivity = appManager?.rootService?.foregroundTask ?: return null
+            Task(topActivity.packageName, topActivity)
+        } catch (e: Exception) {
+            if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
+                appManager?.handleServiceDeath()
+            }
+            null
+        }
     }
 }

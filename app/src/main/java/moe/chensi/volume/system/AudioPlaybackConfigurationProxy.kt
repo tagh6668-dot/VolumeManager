@@ -92,13 +92,8 @@ class AudioPlaybackConfigurationProxy {
         return try {
             Reflect.on(playerInstance).call("setVolume", value)
             true
-        } catch (e: ReflectException) {
-            val cause = e.cause
-            if (cause is InvocationTargetException && cause.cause is DeadObjectException) {
-                false
-            } else {
-                throw e
-            }
+        } catch (e: Throwable) {
+            false
         }
     }
 }
