@@ -311,7 +311,7 @@ class Service : AccessibilityService() {
         accessibilityButtonController.registerAccessibilityButtonCallback(object :
             AccessibilityButtonCallback() {
             override fun onClicked(controller: AccessibilityButtonController?) {
-                if (manager.shizukuStatus == Manager.ShizukuStatus.Connected) {
+                if (manager.rootStatus == Manager.RootStatus.Connected) {
                     showView()
                 }
             }
@@ -344,7 +344,7 @@ class Service : AccessibilityService() {
     override fun onKeyEvent(event: KeyEvent): Boolean {
         Log.i(
             TAG,
-            "onKeyEvent action = ${event.action}, key code = ${event.keyCode}, shizuku permission = ${manager.shizukuStatus}"
+            "onKeyEvent action = ${event.action}, key code = ${event.keyCode}, root permission = ${manager.rootStatus}"
         )
 
         // Only handle `VOLUME_UP` and `VOLUME_DOWN`
@@ -352,8 +352,8 @@ class Service : AccessibilityService() {
             return false
         }
 
-        // Ignore if Shizuku is not ready
-        if (manager.shizukuStatus != Manager.ShizukuStatus.Connected) {
+        // Ignore if Root is not ready
+        if (manager.rootStatus != Manager.RootStatus.Connected) {
             return false
         }
 

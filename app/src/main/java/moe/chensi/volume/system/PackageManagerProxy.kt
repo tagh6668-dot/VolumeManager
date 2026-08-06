@@ -7,32 +7,19 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
-import moe.chensi.volume.EnableBinderProxy
-import moe.chensi.volume.ToggleableBinderProxy
-import org.joor.Reflect
+import moe.chensi.volume.MyApplication
 import java.util.WeakHashMap
 
-class PackageManagerProxy private constructor(context: Context) {
+class PackageManagerProxy private constructor(private val context: Context) {
     companion object {
         private val cache = WeakHashMap<Context, PackageManagerProxy>()
-
-        private const val MATCH_ANY_USER = 0x00000400
 
         fun get(context: Context): PackageManagerProxy {
             return cache.getOrPut(context) { PackageManagerProxy(context) }
         }
     }
 
-    private val userManager = UserManagerProxy(context)
-
     private val packageManager = context.packageManager
-    private val reflect = Reflect.on(packageManager)
-
-    init {
-        val service =
-            Reflect.onClass("android.app.ActivityThread").call("getPackageManager").get<Any>()
-        ToggleableBinderProxy.wrap(service)
-    }
 
     val defaultActivityIcon by lazy { packageManager.defaultActivityIcon }
 
@@ -40,18 +27,24 @@ class PackageManagerProxy private constructor(context: Context) {
         defaultActivityIcon.toBitmap(128, 128).asImageBitmap()
     }
 
-    @EnableBinderProxy
     fun getInstalledPackagesForAllUsers(): List<PackageInfo> {
-        return packageManager.getInstalledPackages(MATCH_ANY_USER or PackageManager.GET_ACTIVITIES)
+        val appManager = (context.applicationContext as? MyApplication)?.manager
+        return appManager?.rootService?.installedPackages ?: emptyList()
     }
 
-    @EnableBinderProxy
     fun getDrawable(packageName: String, resId: Int, appInfo: ApplicationInfo): Drawable? {
-        return packageManager.getDrawable(packageName, resId, appInfo)
+        return try {
+            packageManager.getDrawable(packageName, resId, appInfo)
+        } catch (e: Exception) {
+            null
+        }
     }
 
-    @EnableBinderProxy
     fun loadLabel(appInfo: ApplicationInfo): String {
-        return appInfo.loadLabel(packageManager).toString()
+        return try {
+            appInfo.loadLabel(packageManager).toString()
+        } catch (e: Exception) {
+            appInfo.packageName
+        }
     }
 }

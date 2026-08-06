@@ -1,46 +1,78 @@
 package moe.chensi.volume.system
 
 import android.media.AudioPlaybackConfiguration
+import android.os.Bundle
 import android.os.DeadObjectException
+import android.os.IBinder
 import org.joor.Reflect
 import org.joor.ReflectException
 import java.lang.reflect.InvocationTargetException
 
-class AudioPlaybackConfigurationProxy(raw: AudioPlaybackConfiguration) {
+class AudioPlaybackConfigurationProxy {
     enum class PlayerState(val value: Int) {
         Unknown(-1), Released(0), Idle(1), Started(2), Paused(3), Stopped(4);
     }
 
-    fun Int.toPlayerState(): PlayerState {
-        for (state in PlayerState.entries) {
-            if (state.value == this) {
-                return state
-            }
-        }
-        return PlayerState.Unknown
-    }
-
     companion object {
         val classReflect: Reflect = Reflect.onClass(AudioPlaybackConfiguration::class.java)
+
+        fun Int.toPlayerState(): PlayerState {
+            for (state in PlayerState.entries) {
+                if (state.value == this) {
+                    return state
+                }
+            }
+            return PlayerState.Unknown
+        }
     }
 
-    private val reflect = Reflect.on(raw)
+    val packageName: String
+    val clientPid: Int
+    val playerType: Int
+    val playerState: PlayerState
+    private val playerInstance: Any?
 
-    private val player = reflect.call("getIPlayer")
+    constructor(raw: AudioPlaybackConfiguration) {
+        val reflect = Reflect.on(raw)
+        packageName = try {
+            reflect.get<String?>("mClientPackageName") ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+        clientPid = reflect.get("mClientPid")
+        playerType = reflect.get("mPlayerType")
+        val stateVal: Int = reflect.get("mPlayerState")
+        playerState = stateVal.toPlayerState()
+        playerInstance = reflect.call("getIPlayer").get<Any?>()
+    }
 
-    val hasPlayer
-        get() = player.get<Any>() != null
+    constructor(bundle: Bundle) {
+        packageName = bundle.getString("packageName") ?: ""
+        clientPid = bundle.getInt("clientPid")
+        playerType = bundle.getInt("playerType")
+        val stateVal = bundle.getInt("playerState")
+        playerState = stateVal.toPlayerState()
 
-    val clientPid: Int = reflect.get("mClientPid")
+        val binder = bundle.getBinder("player")
+        playerInstance = if (binder != null) {
+            try {
+                val iplayerStubClass = Class.forName("android.media.IPlayer\$Stub")
+                val asInterfaceMethod = iplayerStubClass.getMethod("asInterface", IBinder::class.java)
+                asInterfaceMethod.invoke(null, binder)
+            } catch (e: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+    }
 
-    val playerType: Int = reflect.get("mPlayerType")
+    val hasPlayer: Boolean
+        get() = playerInstance != null
 
     val playerTypeName: String by lazy {
         classReflect.call("toLogFriendlyPlayerType", playerType).get()
     }
-
-    val playerState
-        get() = reflect.get<Int>("mPlayerState").toPlayerState()
 
     val playerStateName: String by lazy {
         classReflect.call("playerStateToString", playerState.value).get()
@@ -56,8 +88,9 @@ class AudioPlaybackConfigurationProxy(raw: AudioPlaybackConfiguration) {
         }
 
     fun setVolume(value: Float): Boolean {
+        if (playerInstance == null) return false
         return try {
-            player.call("setVolume", value)
+            Reflect.on(playerInstance).call("setVolume", value)
             true
         } catch (e: ReflectException) {
             val cause = e.cause

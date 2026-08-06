@@ -1,13 +1,10 @@
 package moe.chensi.volume.system
 
-import android.app.NotificationManager
 import android.content.Context
-import moe.chensi.volume.EnableBinderProxy
-import moe.chensi.volume.ToggleableBinderProxy
-import org.joor.Reflect
+import moe.chensi.volume.MyApplication
 import java.util.WeakHashMap
 
-class NotificationManagerProxy private constructor(context: Context) {
+class NotificationManagerProxy private constructor(private val context: Context) {
     companion object {
         private val cache = WeakHashMap<Context, NotificationManagerProxy>()
 
@@ -16,20 +13,13 @@ class NotificationManagerProxy private constructor(context: Context) {
         }
     }
 
-    private val notificationManager = context.getSystemService(NotificationManager::class.java)!!
-
-    init {
-        val service = Reflect.onClass(NotificationManager::class.java).call("getService").get<Any>()
-        ToggleableBinderProxy.wrap(service)
-    }
-
-    @EnableBinderProxy
     fun getCurrentInterruptionFilter(): Int {
-        return notificationManager.currentInterruptionFilter
+        val appManager = (context.applicationContext as? MyApplication)?.manager
+        return appManager?.rootService?.interruptionFilter ?: 1
     }
 
-    @EnableBinderProxy
     fun setInterruptionFilter(filter: Int) {
-        notificationManager.setInterruptionFilter(filter)
+        val appManager = (context.applicationContext as? MyApplication)?.manager
+        appManager?.rootService?.setInterruptionFilter(filter)
     }
 }

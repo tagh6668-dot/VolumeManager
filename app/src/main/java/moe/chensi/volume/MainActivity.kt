@@ -64,8 +64,10 @@ import moe.chensi.volume.compose.SystemVolumePanel
 import moe.chensi.volume.compose.ToggleButton
 import moe.chensi.volume.ui.theme.VolumeManagerTheme
 import org.joor.Reflect
-import rikka.shizuku.Shizuku
-import rikka.shizuku.ShizukuRemoteProcess
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.layout.size
 
 @SuppressLint("PrivateApi", "SoonBlockedPrivateApi")
 class MainActivity : ComponentActivity() {
@@ -85,11 +87,8 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // Grant permission via `PackageManager` doesn't work on some Samsung devices
-        val process = Reflect.onClass(Shizuku::class.java).call(
-            "newProcess", arrayOf("pm", "grant", packageName, permission), null, null
-        ).get<ShizukuRemoteProcess>()
-        process.waitFor()
+        // Grant permission via root shell
+        com.topjohnwu.superuser.Shell.cmd("pm grant $packageName $permission").exec()
 
         state = this@MainActivity.checkSelfPermission(permission)
         if (state == PackageManager.PERMISSION_GRANTED) {
@@ -195,7 +194,7 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(), topBar = {
                         TopAppBar(title = { Text("Volume Manager") }, actions = {
-                            if (manager.shizukuStatus == Manager.ShizukuStatus.Connected) {
+                            if (manager.rootStatus == Manager.RootStatus.Connected) {
                                 ToggleButton(
                                     checked = showAll,
                                     checkedIcon = Icons.Default.Check,
@@ -246,8 +245,21 @@ class MainActivity : ComponentActivity() {
                             .padding(innerPadding)
                             .padding(16.dp, 0.dp)
                     ) {
-                        when (manager.shizukuStatus) {
-                            Manager.ShizukuStatus.Uninstalled -> {
+                        when (manager.rootStatus) {
+                            Manager.RootStatus.Checking -> {
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(
+                                        16.dp, Alignment.CenterVertically
+                                    )
+                                ) {
+                                    CircularProgressIndicator()
+                                    Text("Checking root permission...")
+                                }
+                            }
+
+                            Manager.RootStatus.Denied -> {
                                 val context = LocalContext.current
                                 Column(
                                     modifier = Modifier.fillMaxSize(),
@@ -256,69 +268,27 @@ class MainActivity : ComponentActivity() {
                                         16.dp, Alignment.CenterVertically
                                     )
                                 ) {
-                                    Text("Shizuku not installed")
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = "Root Denied",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(64.dp)
+                                    )
+                                    Text(
+                                        "Root Access Denied",
+                                        style = MaterialTheme.typography.titleLarge
+                                    )
                                     Text(
                                         textAlign = TextAlign.Center,
-                                        text = "Please install Shizuku from the Play Store or GitHub"
+                                        text = "Please grant root permission in Magisk/KernelSU and try again."
                                     )
-                                    Button(
-                                        onClick = {
-                                            val intent = Intent(
-                                                Intent.ACTION_VIEW,
-                                                "https://play.google.com/store/apps/details?id=${Manager.SHIZUKU_PACKAGE_NAME}".toUri()
-                                            )
-                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            context.startActivity(intent)
-                                        }) {
-                                        Text("Get Shizuku on Play Store")
-                                    }
-                                    Button(
-                                        onClick = {
-                                            val intent = Intent(
-                                                Intent.ACTION_VIEW,
-                                                "https://github.com/RikkaApps/Shizuku/releases".toUri()
-                                            )
-                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            context.startActivity(intent)
-                                        }) {
-                                        Text("Get Shizuku on GitHub")
+                                    Button(onClick = { manager.connectRoot(context) }) {
+                                        Text("Request Root Again")
                                     }
                                 }
                             }
 
-                            Manager.ShizukuStatus.Disconnected -> Column(
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(
-                                    16.dp, Alignment.CenterVertically
-                                )
-                            ) {
-                                Text("Waiting for Shizuku...")
-                                Text(
-                                    textAlign = TextAlign.Center,
-                                    text = "Make sure Shizuku is installed and enabled"
-                                )
-                            }
-
-                            Manager.ShizukuStatus.PermissionDenied -> Column(
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(
-                                    16.dp, Alignment.CenterVertically
-                                )
-                            ) {
-                                Text("Shizuku is installed and enabled")
-                                Text(
-                                    textAlign = TextAlign.Center,
-                                    text = "Allow App Volume Manager to access Shizuku?"
-                                )
-
-                                Button(onClick = { Shizuku.requestPermission(0) }) {
-                                    Text(text = "Request permission")
-                                }
-                            }
-
-                            Manager.ShizukuStatus.Connected -> {
+                            Manager.RootStatus.Connected -> {
                                 ServiceStatus()
 
                                 AppVolumeList(

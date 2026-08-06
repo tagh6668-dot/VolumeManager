@@ -14,7 +14,3 @@
 
 # Preserve line number information for debugging stack traces.
 -keepattributes SourceFile,LineNumberTable
-
--keepclassmembers class rikka.shizuku.Shizuku {
-    static private rikka.shizuku.ShizukuRemoteProcess newProcess(java.lang.String[], java.lang.String[], java.lang.String);
-}

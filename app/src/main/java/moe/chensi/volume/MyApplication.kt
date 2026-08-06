@@ -7,7 +7,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import org.lsposed.hiddenapibypass.HiddenApiBypass
-import rikka.shizuku.ShizukuProvider
 
 class MyApplication : Application() {
     val dataStore: DataStore<Preferences> by preferencesDataStore(name = "app_volumes")
@@ -20,7 +19,6 @@ class MyApplication : Application() {
 
         val processName = getProcessName()
         Log.i("Application", "process name = $processName")
-        ShizukuProvider.enableMultiProcessSupport(!processName.contains(":"))
         HiddenApiBypass.addHiddenApiExemptions("")
         
         CrashHandler.ensureInitialized(this)

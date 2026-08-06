@@ -18,32 +18,53 @@ import moe.chensi.volume.system.AudioPlaybackConfigurationProxy
 import moe.chensi.volume.system.NotificationManagerProxy
 import moe.chensi.volume.system.PackageManagerProxy
 import org.joor.Reflect
-import rikka.shizuku.Shizuku
-import rikka.shizuku.ShizukuProvider
 
 @SuppressLint("PrivateApi")
 class Manager(context: Context, dataStore: DataStore<Preferences>) {
-    companion object {
-        const val SHIZUKU_PACKAGE_NAME = "moe.shizuku.privileged.api"
+
+    enum class RootStatus {
+        Checking, Denied, Connected
     }
 
-    enum class ShizukuStatus {
-        Uninstalled, Disconnected, PermissionDenied, Connected
+    private var _rootStatus by mutableStateOf(RootStatus.Checking)
+    val rootStatus
+        get() = _rootStatus
+
+    var rootService: IRootService? = null
+        private set
+
+    private val rootConnection = object : android.content.ServiceConnection {
+        override fun onServiceConnected(name: android.content.ComponentName, service: android.os.IBinder) {
+            rootService = IRootService.Stub.asInterface(service)
+            _rootStatus = RootStatus.Connected
+            start()
+        }
+
+        override fun onServiceDisconnected(name: android.content.ComponentName) {
+            rootService = null
+            _rootStatus = RootStatus.Checking
+        }
     }
 
-    private var _shizukuStatus by mutableStateOf(ShizukuStatus.Disconnected)
-    val shizukuStatus
-        get() = _shizukuStatus
-
-    val audioManager = context.getSystemService(AudioManager::class.java)!!.apply {
-        Reflect.onClass(AudioManager::class.java).call("getService").get<Any>()
-            .apply { ToggleableBinderProxy.wrap(this) }
+    fun connectRoot(context: Context) {
+        _rootStatus = RootStatus.Checking
+        Thread {
+            try {
+                val shell = com.topjohnwu.superuser.Shell.getShell()
+                if (shell.isRoot) {
+                    val intent = android.content.Intent(context, RootServiceImpl::class.java)
+                    com.topjohnwu.superuser.ipc.RootService.bind(intent, rootConnection)
+                } else {
+                    _rootStatus = RootStatus.Denied
+                }
+            } catch (e: Exception) {
+                _rootStatus = RootStatus.Denied
+            }
+        }.start()
     }
 
-    val activityManager = context.getSystemService(ActivityManager::class.java)!!.apply {
-        Reflect.onClass(ActivityManager::class.java).call("getService").get<Any>()
-            .apply { ToggleableBinderProxy.wrap(this) }
-    }
+    val audioManager = context.getSystemService(AudioManager::class.java)!!
+    val activityManager = context.getSystemService(ActivityManager::class.java)!!
     private val packageManager by lazy { PackageManagerProxy.get(context) }
     val notificationManagerProxy = NotificationManagerProxy(context)
 
@@ -93,11 +114,15 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
         return apps[packageName]
     }
 
-    @EnableBinderProxy
+    private fun queryActivePlaybackConfigurations(): List<AudioPlaybackConfigurationProxy> {
+        val bundles = rootService?.activePlaybackConfigurations ?: emptyList()
+        return bundles.map { AudioPlaybackConfigurationProxy(it) }
+    }
+
     private fun initialize() {
         reloadApps()
 
-        val playbackConfigurations = audioManager.activePlaybackConfigurations
+        val playbackConfigurations = queryActivePlaybackConfigurations()
         processAudioPlaybackConfigurations(playbackConfigurations)
 
         audioManager.registerAudioPlaybackCallback(
@@ -106,69 +131,24 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
                     for (app in apps.values) {
                         app.clearPlayers()
                     }
-                    processAudioPlaybackConfigurations(configs)
+                    val allConfigs = queryActivePlaybackConfigurations()
+                    processAudioPlaybackConfigurations(allConfigs)
                 }
             }, null
         )
     }
 
-    @SuppressLint("DiscouragedPrivateApi")
-    @EnableBinderProxy
-    fun processAudioPlaybackConfigurations(configs: List<AudioPlaybackConfiguration>) {
-        val runningProcesses = activityManager.runningAppProcesses
-
-        for (config in configs) {
-            val proxy = AudioPlaybackConfigurationProxy(config)
-
-            val pid = proxy.clientPid
-            val process = runningProcesses.find { process -> process.pid == pid } ?: continue
-
-            val packageName = process.pkgList[0] ?: continue
+    fun processAudioPlaybackConfigurations(proxies: List<AudioPlaybackConfigurationProxy>) {
+        for (proxy in proxies) {
+            val packageName = proxy.packageName
+            if (packageName.isEmpty()) continue
             val app = getApp(packageName) ?: continue
-
             app.addPlayer(proxy)
         }
     }
 
     init {
-        val isShizukuInstalled = try {
-            context.packageManager.getPackageInfo(SHIZUKU_PACKAGE_NAME, 0)
-            true
-        } catch (_: PackageManager.NameNotFoundException) {
-            false
-        }
-
-        if (!isShizukuInstalled) {
-            _shizukuStatus = ShizukuStatus.Uninstalled
-        } else if (!Shizuku.pingBinder()) {
-            _shizukuStatus = ShizukuStatus.Disconnected
-        }
-
-        Shizuku.addBinderReceivedListenerSticky {
-            if (Shizuku.isPreV11()) {
-                return@addBinderReceivedListenerSticky
-            }
-
-            if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
-                _shizukuStatus = ShizukuStatus.Connected
-                start()
-            } else {
-                _shizukuStatus = ShizukuStatus.PermissionDenied
-            }
-        }
-
-        Shizuku.addBinderDeadListener {
-            _shizukuStatus = ShizukuStatus.Disconnected
-        }
-
-        Shizuku.addRequestPermissionResultListener { _, grantResult ->
-            if (grantResult == PackageManager.PERMISSION_GRANTED) {
-                _shizukuStatus = ShizukuStatus.Connected
-                start()
-            }
-        }
-
-        ShizukuProvider.requestBinderForNonProviderProcess(context)
+        connectRoot(context)
     }
 
     private fun start() {
