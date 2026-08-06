@@ -28,13 +28,9 @@ class PackageManagerProxy private constructor(private val context: Context) {
     }
 
     fun getInstalledPackagesForAllUsers(): List<PackageInfo> {
-        val appManager = (context.applicationContext as? MyApplication)?.manager
         return try {
-            appManager?.rootService?.installedPackages ?: emptyList()
+            packageManager.getInstalledPackages(PackageManager.GET_ACTIVITIES)
         } catch (e: Exception) {
-            if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
-                appManager?.handleServiceDeath()
-            }
             emptyList()
         }
     }
