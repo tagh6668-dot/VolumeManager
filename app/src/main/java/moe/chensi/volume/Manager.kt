@@ -52,8 +52,14 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
             try {
                 val shell = com.topjohnwu.superuser.Shell.getShell()
                 if (shell.isRoot) {
-                    val intent = android.content.Intent(context, RootServiceImpl::class.java)
-                    com.topjohnwu.superuser.ipc.RootService.bind(intent, rootConnection)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        try {
+                            val intent = android.content.Intent(context, RootServiceImpl::class.java)
+                            com.topjohnwu.superuser.ipc.RootService.bind(intent, rootConnection)
+                        } catch (e: Exception) {
+                            _rootStatus = RootStatus.Denied
+                        }
+                    }
                 } else {
                     _rootStatus = RootStatus.Denied
                 }
