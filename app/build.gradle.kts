@@ -50,8 +50,8 @@ android {
     }
 
     lint {
-        isAbortOnError = false
-        isCheckReleaseBuilds = false
+        abortOnError = false
+        checkReleaseBuilds = false
         disable.add("Instantiatable")
     }
 }
