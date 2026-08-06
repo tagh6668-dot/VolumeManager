@@ -55,6 +55,13 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
         _rootStatus = RootStatus.Checking
         Thread {
             try {
+                val cached = com.topjohnwu.superuser.Shell.getCachedShell()
+                if (cached != null && !cached.isRoot) {
+                    try {
+                        cached.close()
+                    } catch (ignored: Exception) {}
+                }
+
                 val shell = com.topjohnwu.superuser.Shell.getShell()
                 if (shell.isRoot) {
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
