@@ -190,6 +190,8 @@ data class App(
         private set
 
     private var _volume by mutableFloatStateOf(preferences.volume)
+    private var _isMutedByAppOps = false
+
     var volume
         get() = _volume
         set(value) {
@@ -197,15 +199,14 @@ data class App(
                 return
             }
 
-            val wasMuted = _volume == 0f
-            val isMuting = value == 0f
-
             applyVolume(value)
 
             // Use AppOps to mute/unmute (works on MIUI where IPlayer.setVolume doesn't)
-            if (isMuting && !wasMuted) {
+            if (value == 0f && !_isMutedByAppOps) {
+                _isMutedByAppOps = true
                 muteCallback?.invoke(packageName, true)
-            } else if (!isMuting && wasMuted) {
+            } else if (value > 0f && _isMutedByAppOps) {
+                _isMutedByAppOps = false
                 muteCallback?.invoke(packageName, false)
             }
 
