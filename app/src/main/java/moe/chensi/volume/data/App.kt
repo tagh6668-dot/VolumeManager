@@ -26,6 +26,8 @@ data class App(
     private var preferences: AppPreferences,
     private val savePreferences: () -> Unit
 ) {
+    // Callback for muting/unmuting via AppOps (set by Manager)
+    var muteCallback: ((packageName: String, mute: Boolean) -> Unit)? = null
     companion object {
         val collator: Collator by lazy {
             Collator.getInstance().apply {
@@ -195,7 +197,17 @@ data class App(
                 return
             }
 
+            val wasMuted = _volume == 0f
+            val isMuting = value == 0f
+
             applyVolume(value)
+
+            // Use AppOps to mute/unmute (works on MIUI where IPlayer.setVolume doesn't)
+            if (isMuting && !wasMuted) {
+                muteCallback?.invoke(packageName, true)
+            } else if (!isMuting && wasMuted) {
+                muteCallback?.invoke(packageName, false)
+            }
 
             _volume = value
             preferences.volume = value

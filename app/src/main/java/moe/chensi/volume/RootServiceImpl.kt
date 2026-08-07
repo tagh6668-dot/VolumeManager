@@ -1,6 +1,7 @@
 package moe.chensi.volume
 
 import android.app.ActivityManager
+import android.app.AppOpsManager
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
@@ -101,6 +102,19 @@ class RootServiceImpl : RootService() {
             }
             Log.d(TAG, "Returning ${result.size} playback configurations")
             return result
+        }
+
+        override fun setAppPlayAudio(packageName: String, allow: Boolean) {
+            try {
+                val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+                val uid = packageManager.getPackageUid(packageName, 0)
+                val mode = if (allow) AppOpsManager.MODE_ALLOWED else AppOpsManager.MODE_IGNORED
+                // OP_PLAY_AUDIO = 28
+                Reflect.on(appOps).call("setMode", 28, uid, packageName, mode)
+                Log.d(TAG, "setAppPlayAudio: $packageName allow=$allow uid=$uid mode=$mode - SUCCESS")
+            } catch (e: Exception) {
+                Log.e(TAG, "setAppPlayAudio FAILED for $packageName allow=$allow", e)
+            }
         }
     }
 }

@@ -115,13 +115,23 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
         for (packageInfo in packageManager.getInstalledPackagesForAllUsers()) {
             val appInfo = packageInfo.applicationInfo ?: continue
             if (!apps.containsKey(packageInfo.packageName)) {
-                apps[packageInfo.packageName] = App(
+                val app = App(
                     packageManager,
                     packageInfo,
                     packageManager.loadLabel(appInfo),
                     appPreferencesStore.getOrCreate(packageInfo.packageName),
                     appPreferencesStore::save
                 )
+                app.muteCallback = { pkg, mute ->
+                    try {
+                        rootService?.setAppPlayAudio(pkg, !mute)
+                    } catch (e: Exception) {
+                        if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
+                            handleServiceDeath()
+                        }
+                    }
+                }
+                apps[packageInfo.packageName] = app
             }
         }
     }

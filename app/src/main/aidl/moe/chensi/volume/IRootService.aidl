@@ -10,4 +10,5 @@ interface IRootService {
     int getInterruptionFilter();
     void setInterruptionFilter(int filter);
     List<Bundle> getActivePlaybackConfigurations();
+    void setAppPlayAudio(String packageName, boolean allow);
 }
