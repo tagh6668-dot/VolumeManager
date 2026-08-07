@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.AudioPlaybackConfiguration
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +22,10 @@ import org.joor.Reflect
 
 @SuppressLint("PrivateApi")
 class Manager(context: Context, dataStore: DataStore<Preferences>) {
+
+    companion object {
+        private const val TAG = "AppVolManager"
+    }
 
     enum class RootStatus {
         Checking, Denied, Connected
@@ -135,8 +140,10 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
     private fun queryActivePlaybackConfigurations(): List<AudioPlaybackConfigurationProxy> {
         return try {
             val bundles = rootService?.activePlaybackConfigurations ?: emptyList()
+            Log.d(TAG, "queryActivePlaybackConfigurations: got ${bundles.size} bundles from root service")
             bundles.map { AudioPlaybackConfigurationProxy(it) }
         } catch (e: Exception) {
+            Log.e(TAG, "queryActivePlaybackConfigurations FAILED", e)
             if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
                 handleServiceDeath()
             }
@@ -153,6 +160,7 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
         audioManager.registerAudioPlaybackCallback(
             object : AudioManager.AudioPlaybackCallback() {
                 override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>) {
+                    Log.d(TAG, "onPlaybackConfigChanged: ${configs.size} configs from system callback")
                     for (app in apps.values) {
                         app.clearPlayers()
                     }
@@ -164,10 +172,18 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
     }
 
     fun processAudioPlaybackConfigurations(proxies: List<AudioPlaybackConfigurationProxy>) {
+        Log.d(TAG, "processAudioPlaybackConfigurations: processing ${proxies.size} proxies")
         for (proxy in proxies) {
             val packageName = proxy.packageName
-            if (packageName.isEmpty()) continue
-            val app = getApp(packageName) ?: continue
+            if (packageName.isEmpty()) {
+                Log.w(TAG, "  Skipping proxy with empty packageName (pid=${proxy.clientPid})")
+                continue
+            }
+            val app = getApp(packageName) ?: run {
+                Log.w(TAG, "  No App found for $packageName")
+                continue
+            }
+            Log.d(TAG, "  Adding player for $packageName (hasPlayer=${proxy.hasPlayer}, volume=${app.volume})")
             app.addPlayer(proxy)
         }
     }

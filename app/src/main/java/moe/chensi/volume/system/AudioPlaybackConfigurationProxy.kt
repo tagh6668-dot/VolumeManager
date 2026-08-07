@@ -4,6 +4,7 @@ import android.media.AudioPlaybackConfiguration
 import android.os.Bundle
 import android.os.DeadObjectException
 import android.os.IBinder
+import android.util.Log
 import org.joor.Reflect
 import org.joor.ReflectException
 import java.lang.reflect.InvocationTargetException
@@ -14,6 +15,7 @@ class AudioPlaybackConfigurationProxy {
     }
 
     companion object {
+        private const val TAG = "AppVolManager.Proxy"
         val classReflect: Reflect = Reflect.onClass(AudioPlaybackConfiguration::class.java)
 
         fun Int.toPlayerState(): PlayerState {
@@ -54,15 +56,20 @@ class AudioPlaybackConfigurationProxy {
         playerState = stateVal.toPlayerState()
 
         val binder = bundle.getBinder("player")
+        Log.d(TAG, "Bundle constructor: packageName=$packageName, pid=$clientPid, playerType=$playerType, state=$playerState, hasBinder=${binder != null}")
         playerInstance = if (binder != null) {
             try {
                 val iplayerStubClass = Class.forName("android.media.IPlayer\$Stub")
                 val asInterfaceMethod = iplayerStubClass.getMethod("asInterface", IBinder::class.java)
-                asInterfaceMethod.invoke(null, binder)
+                val player = asInterfaceMethod.invoke(null, binder)
+                Log.d(TAG, "IPlayer proxy created successfully for $packageName: $player")
+                player
             } catch (e: Exception) {
+                Log.e(TAG, "Failed to create IPlayer proxy for $packageName", e)
                 null
             }
         } else {
+            Log.w(TAG, "No player binder available for $packageName (pid=$clientPid)")
             null
         }
     }
@@ -88,11 +95,16 @@ class AudioPlaybackConfigurationProxy {
         }
 
     fun setVolume(value: Float): Boolean {
-        if (playerInstance == null) return false
+        if (playerInstance == null) {
+            Log.w(TAG, "setVolume($value) called but playerInstance is null for $packageName")
+            return false
+        }
         return try {
             Reflect.on(playerInstance).call("setVolume", value)
+            Log.d(TAG, "setVolume($value) succeeded for $packageName")
             true
         } catch (e: Throwable) {
+            Log.e(TAG, "setVolume($value) FAILED for $packageName (playerInstance=$playerInstance)", e)
             false
         }
     }

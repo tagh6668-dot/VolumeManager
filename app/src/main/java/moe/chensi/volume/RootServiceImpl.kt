@@ -10,12 +10,16 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.Bundle
 import android.os.IBinder
+import android.util.Log
 import com.topjohnwu.superuser.ipc.RootService
 import moe.chensi.volume.system.AudioPlaybackConfigurationProxy
 import org.joor.Reflect
 import java.util.ArrayList
 
 class RootServiceImpl : RootService() {
+    companion object {
+        private const val TAG = "AppVolManager.Root"
+    }
 
     override fun onBind(intent: Intent): IBinder {
         return binder
@@ -61,6 +65,8 @@ class RootServiceImpl : RootService() {
             val configs = am?.activePlaybackConfigurations ?: emptyList()
             val result = ArrayList<Bundle>()
 
+            Log.d(TAG, "getActivePlaybackConfigurations: found ${configs.size} configs")
+
             val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager?
             val runningProcesses = activityManager?.runningAppProcesses ?: emptyList()
 
@@ -69,7 +75,10 @@ class RootServiceImpl : RootService() {
                     val proxy = AudioPlaybackConfigurationProxy(config)
                     val pid = proxy.clientPid
                     val process = runningProcesses.find { it.pid == pid }
-                    val packageName = process?.pkgList?.firstOrNull() ?: ""
+                    val packageName = process?.pkgList?.firstOrNull()
+                        ?: proxy.packageName.ifEmpty { "" }
+
+                    Log.d(TAG, "Config: pkg=$packageName, pid=$pid, type=${proxy.playerTypeName}, state=${proxy.playerStateName}")
 
                     val bundle = Bundle()
                     bundle.putString("packageName", packageName)
@@ -78,15 +87,19 @@ class RootServiceImpl : RootService() {
                     bundle.putInt("playerState", proxy.playerState.value)
 
                     val playerBinder = Reflect.on(config).call("getIPlayer").get<IBinder?>()
+                    Log.d(TAG, "  IPlayer binder for $packageName: ${if (playerBinder != null) "OK (${playerBinder.javaClass.name})" else "NULL!"}")
                     if (playerBinder != null) {
                         bundle.putBinder("player", playerBinder)
+                    } else {
+                        Log.w(TAG, "  WARNING: No IPlayer binder for $packageName - volume control will NOT work for this player!")
                     }
 
                     result.add(bundle)
                 } catch (e: Exception) {
-                    // Ignore and skip bad configurations
+                    Log.e(TAG, "Failed to process playback config", e)
                 }
             }
+            Log.d(TAG, "Returning ${result.size} playback configurations")
             return result
         }
     }
