@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -77,6 +79,17 @@ fun AppVolumeSlider(
                     maxLines = 1,
                 )
             }
+        }
+
+        ToggleButton(
+            checked = app.pinned,
+            checkedIcon = Icons.Filled.PushPin,
+            checkedDescription = "Unpin app",
+            uncheckedIcon = Icons.Outlined.PushPin,
+            uncheckedDescription = "Pin app"
+        ) {
+            app.pinned = it
+            onChange?.invoke()
         }
 
         if (showOptions) {

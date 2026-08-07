@@ -77,7 +77,7 @@ fun LazyListScope.group(
 fun AppVolumeList(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
-    apps: MutableCollection<App>,
+    apps: Collection<App>,
     showEmpty: Boolean = false,
     showAll: Boolean,
     onChange: (() -> Unit)? = null,
@@ -88,6 +88,7 @@ fun AppVolumeList(
     val scope = rememberCoroutineScope()
     var selectedGroup by remember { mutableStateOf<String?>(null) }
 
+    val pinnedApps = mutableListOf<App>()
     val activePlayers = mutableListOf<App>()
     val inactivePlayers = mutableListOf<App>()
     val hiddenPlayers = mutableListOf<App>()
@@ -95,7 +96,9 @@ fun AppVolumeList(
     val otherAppsWithoutActivities = mutableListOf<App>()
 
     for (app in apps) {
-        if (app.isPlayer) {
+        if (app.pinned) {
+            pinnedApps.add(app)
+        } else if (app.isPlayer) {
             if (!app.hidden) {
                 if (app.isPlaying) {
                     activePlayers.add(app)
@@ -122,6 +125,7 @@ fun AppVolumeList(
                 currentIndex += 1 + appsList.size
             }
         }
+        addGroup(stringResource(R.string.group_pinned), pinnedApps, false)
         addGroup(stringResource(R.string.group_active), activePlayers, true)
         addGroup(stringResource(R.string.group_inactive), inactivePlayers, true)
         addGroup(stringResource(R.string.group_hidden), hiddenPlayers, true)
@@ -146,9 +150,16 @@ fun AppVolumeList(
         content?.invoke(this)
 
         if (!showAll) {
-            if (activePlayers.isNotEmpty()) {
-                items(items = activePlayers, key = { app -> app.packageName }) { app ->
-                    AppVolumeSlider(app, showOptions = false, onChange = onChange)
+            if (pinnedApps.isNotEmpty() || activePlayers.isNotEmpty()) {
+                if (pinnedApps.isNotEmpty()) {
+                    items(items = pinnedApps.sortedWith(App.comparator), key = { app -> app.packageName }) { app ->
+                        AppVolumeSlider(app, showOptions = false, onChange = onChange)
+                    }
+                }
+                if (activePlayers.isNotEmpty()) {
+                    items(items = activePlayers.sortedWith(App.comparator), key = { app -> app.packageName }) { app ->
+                        AppVolumeSlider(app, showOptions = false, onChange = onChange)
+                    }
                 }
             } else if (showEmpty) {
                 item {

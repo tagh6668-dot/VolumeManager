@@ -3,6 +3,7 @@
     <string name="app_name">AppVolMgr</string>
     <string name="accessibility_service_description">保持 AppVolMgr 在后台运行，通过无障碍按钮或物理音量键快速调整音量</string>
     <string name="group_active">正在播放</string>
+    <string name="group_pinned">已置顶</string>
     <string name="group_inactive">未播放</string>
     <string name="group_hidden">已隐藏</string>
     <string name="group_other">其它应用</string>

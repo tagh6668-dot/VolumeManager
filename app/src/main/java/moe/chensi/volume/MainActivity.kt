@@ -68,6 +68,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.fillMaxWidth
 
 @SuppressLint("PrivateApi", "SoonBlockedPrivateApi")
 class MainActivity : ComponentActivity() {
@@ -291,12 +297,45 @@ class MainActivity : ComponentActivity() {
                             Manager.RootStatus.Connected -> {
                                 ServiceStatus()
 
+                                var searchQuery by remember { mutableStateOf("") }
+
+                                OutlinedTextField(
+                                    value = searchQuery,
+                                    onValueChange = { searchQuery = it },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 8.dp),
+                                    placeholder = { Text("Search apps...") },
+                                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                                    trailingIcon = {
+                                        if (searchQuery.isNotEmpty()) {
+                                            IconButton(onClick = { searchQuery = "" }) {
+                                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                            }
+                                        }
+                                    },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(28.dp),
+                                    colors = OutlinedTextFieldDefaults.colors()
+                                )
+
+                                val filteredApps = if (searchQuery.isBlank()) {
+                                    manager.apps.values
+                                } else {
+                                    manager.apps.values.filter { app ->
+                                        app.name.contains(searchQuery, ignoreCase = true) ||
+                                        app.packageName.contains(searchQuery, ignoreCase = true)
+                                    }
+                                }
+
+                                val showAllEffective = showAll || searchQuery.isNotBlank()
+
                                 AppVolumeList(
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(bottom = 16.dp),
-                                    apps = manager.apps.values,
+                                    apps = filteredApps,
                                     showEmpty = true,
-                                    showAll = showAll,
+                                    showAll = showAllEffective,
                                     onShowAll = { showAll = true },
                                     content = {
                                         item("system_volume_panel_main") {
@@ -304,8 +343,8 @@ class MainActivity : ComponentActivity() {
                                                 audioManager = manager.audioManager,
                                                 notificationManagerProxy = manager.notificationManagerProxy,
                                                 showCallVolumeAlways = true,
-                                                applyVisibilityFilter = !showAll,
-                                                allowVisibilityConfig = showAll,
+                                                applyVisibilityFilter = !showAllEffective,
+                                                allowVisibilityConfig = showAllEffective,
                                                 isSliderVisible = manager::isSystemSliderVisible,
                                                 onSliderVisibilityChange = manager::setSystemSliderVisible,
                                             )

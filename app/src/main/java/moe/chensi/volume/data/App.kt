@@ -126,6 +126,7 @@ data class App(
         _volume = preferences.volume
         _hidden = preferences.hidden
         _disableVolumeButtons = preferences.disableVolumeButtons
+        _pinned = preferences.pinned
     }
 
     private val _players: MutableList<AudioPlaybackConfigurationProxy> = mutableStateListOf()
@@ -225,6 +226,19 @@ data class App(
 
             _hidden = value
             preferences.hidden = value
+            savePreferences()
+        }
+
+    private var _pinned by mutableStateOf(preferences.pinned)
+    var pinned: Boolean
+        get() = _pinned
+        set(value) {
+            if (value == _pinned) {
+                return
+            }
+
+            _pinned = value
+            preferences.pinned = value
             savePreferences()
         }
 

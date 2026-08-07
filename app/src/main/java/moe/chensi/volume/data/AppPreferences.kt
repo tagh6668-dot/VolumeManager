@@ -7,5 +7,6 @@ data class AppPreferences(
     var isPlayer: Boolean = false,
     var volume: Float = 1.0f,
     var hidden: Boolean = false,
-    var disableVolumeButtons: Boolean = false
+    var disableVolumeButtons: Boolean = false,
+    var pinned: Boolean = false
 )
