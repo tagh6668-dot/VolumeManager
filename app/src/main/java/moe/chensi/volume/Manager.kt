@@ -179,7 +179,8 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
                 Log.w(TAG, "  Skipping proxy with empty packageName (pid=${proxy.clientPid})")
                 continue
             }
-            val app = getApp(packageName) ?: run {
+            val app = getApp(packageName)
+            if (app == null) {
                 Log.w(TAG, "  No App found for $packageName")
                 continue
             }
