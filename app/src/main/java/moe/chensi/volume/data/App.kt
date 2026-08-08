@@ -28,6 +28,7 @@ data class App(
 ) {
     // Callback for muting/unmuting via AppOps (set by Manager)
     var muteCallback: ((packageName: String, mute: Boolean) -> Unit)? = null
+    var volumeCallback: ((packageName: String, volume: Float) -> Unit)? = null
     companion object {
         val collator: Collator by lazy {
             Collator.getInstance().apply {
@@ -201,6 +202,9 @@ data class App(
             }
 
             applyVolume(value)
+
+            // Apply volume via root service (reliable on MIUI where client-side IPlayer.setVolume may not work)
+            volumeCallback?.invoke(packageName, value)
 
             // Use AppOps to mute/unmute (works on MIUI where IPlayer.setVolume doesn't)
             if (value == 0f && !_isMutedByAppOps) {

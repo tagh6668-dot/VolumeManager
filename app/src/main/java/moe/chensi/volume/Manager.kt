@@ -131,6 +131,15 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
                         }
                     }
                 }
+                app.volumeCallback = { pkg, vol ->
+                    try {
+                        rootService?.setAppVolume(pkg, vol)
+                    } catch (e: Exception) {
+                        if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
+                            handleServiceDeath()
+                        }
+                    }
+                }
                 apps[packageInfo.packageName] = app
             }
         }
@@ -196,6 +205,19 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
             }
             Log.d(TAG, "  Adding player for $packageName (hasPlayer=${proxy.hasPlayer}, volume=${app.volume})")
             app.addPlayer(proxy)
+        }
+
+        // Apply saved volumes via root service for apps with non-default volume
+        for ((_, app) in apps) {
+            if (app.volume != 1f && app.players.isNotEmpty()) {
+                try {
+                    rootService?.setAppVolume(app.packageName, app.volume)
+                } catch (e: Exception) {
+                    if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
+                        handleServiceDeath()
+                    }
+                }
+            }
         }
     }
 

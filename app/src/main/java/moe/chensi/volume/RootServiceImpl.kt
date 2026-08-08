@@ -27,6 +27,9 @@ class RootServiceImpl : RootService() {
     }
 
     private val binder = object : IRootService.Stub() {
+        // Store IPlayer references for direct volume control from root context
+        private val playersByPackage = mutableMapOf<String, MutableList<Any>>()
+
         override fun getInstalledPackages(): List<PackageInfo> {
             return try {
                 val MATCH_ANY_USER = 0x00000400
@@ -68,6 +71,9 @@ class RootServiceImpl : RootService() {
 
             Log.d(TAG, "getActivePlaybackConfigurations: found ${configs.size} configs")
 
+            // Clear old player references before refreshing
+            synchronized(playersByPackage) { playersByPackage.clear() }
+
             val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager?
             val runningProcesses = activityManager?.runningAppProcesses ?: emptyList()
 
@@ -87,7 +93,25 @@ class RootServiceImpl : RootService() {
                     bundle.putInt("playerType", proxy.playerType)
                     bundle.putInt("playerState", proxy.playerState.value)
 
-                    val playerBinder = Reflect.on(config).call("getIPlayer").get<IBinder?>()
+                    // Get the IPlayer object (IPlayer.Stub.Proxy, NOT IBinder)
+                    val iPlayer = Reflect.on(config).call("getIPlayer").get<Any?>()
+                    
+                    // Store IPlayer reference for root-side volume control
+                    if (iPlayer != null) {
+                        synchronized(playersByPackage) { playersByPackage.getOrPut(packageName) { mutableListOf() }.add(iPlayer) }
+                    }
+                    
+                    // Extract the actual IBinder using asBinder() - IPlayer.Stub.Proxy
+                    // does NOT implement IBinder, so we must call asBinder() to get it
+                    val playerBinder: IBinder? = if (iPlayer != null) {
+                        try {
+                            Reflect.on(iPlayer).call("asBinder").get<IBinder?>()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "  Failed to get IBinder via asBinder() for $packageName", e)
+                            null
+                        }
+                    } else null
+                    
                     Log.d(TAG, "  IPlayer binder for $packageName: ${if (playerBinder != null) "OK (${playerBinder.javaClass.name})" else "NULL!"}")
                     if (playerBinder != null) {
                         bundle.putBinder("player", playerBinder)
@@ -114,6 +138,21 @@ class RootServiceImpl : RootService() {
                 Log.d(TAG, "setAppPlayAudio: $packageName allow=$allow uid=$uid mode=$mode - SUCCESS")
             } catch (e: Exception) {
                 Log.e(TAG, "setAppPlayAudio FAILED for $packageName allow=$allow", e)
+            }
+        }
+
+        override fun setAppVolume(packageName: String, volume: Float) {
+            val players = synchronized(playersByPackage) { playersByPackage[packageName]?.toList() } ?: run {
+                Log.w(TAG, "setAppVolume: no players found for $packageName")
+                return
+            }
+            for (player in players) {
+                try {
+                    Reflect.on(player).call("setVolume", volume)
+                    Log.d(TAG, "setAppVolume: $packageName volume=$volume - SUCCESS (via root)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "setAppVolume: $packageName volume=$volume - FAILED", e)
+                }
             }
         }
     }
