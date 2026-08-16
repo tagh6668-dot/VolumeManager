@@ -308,14 +308,18 @@ class Service : AccessibilityService() {
         val application = super.getApplication() as MyApplication
         manager = application.manager
 
-        accessibilityButtonController.registerAccessibilityButtonCallback(object :
-            AccessibilityButtonCallback() {
-            override fun onClicked(controller: AccessibilityButtonController?) {
-                if (manager.rootStatus == Manager.RootStatus.Connected) {
-                    showView()
+        try {
+            accessibilityButtonController.registerAccessibilityButtonCallback(object :
+                AccessibilityButtonCallback() {
+                override fun onClicked(controller: AccessibilityButtonController?) {
+                    if (manager.rootStatus == Manager.RootStatus.Connected) {
+                        showView()
+                    }
                 }
-            }
-        })
+            })
+        } catch (e: Exception) {
+            Log.w(TAG, "Accessibility button callback registration skipped", e)
+        }
 
         registerReceiver(broadcastReceiver, IntentFilter(ACTION_SHOW_VIEW), RECEIVER_NOT_EXPORTED)
 
