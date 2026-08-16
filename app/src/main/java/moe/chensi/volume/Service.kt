@@ -362,6 +362,10 @@ class Service : AccessibilityService() {
         Log.i(TAG, "onKeyEvent foreground task: $task")
 
         if (task != null) {
+            if (task.app == "com.android.camera" || task.app.lowercase().contains("camera")) {
+                Log.i(TAG, "Camera app in foreground, bypassing volume button interception")
+                return false
+            }
             val app = manager.apps[task.app]
             if (app != null && app.disableVolumeButtons) {
                 return false
