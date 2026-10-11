@@ -24,7 +24,7 @@ data class App(
     val packageInfo: PackageInfo,
     val name: String,
     private var preferences: AppPreferences,
-    private val savePreferences: () -> Unit
+    private val savePreferences: (debounceMs: Long) -> Unit
 ) {
     // Callback for muting/unmuting via AppOps (set by Manager)
     var muteCallback: ((packageName: String, mute: Boolean) -> Unit)? = null
@@ -128,6 +128,14 @@ data class App(
         _hidden = preferences.hidden
         _disableVolumeButtons = preferences.disableVolumeButtons
         _pinned = preferences.pinned
+        _isMuted = preferences.muted || preferences.volume == 0f
+        _savedVolume = if (preferences.savedVolume > 0f) preferences.savedVolume
+        else if (preferences.volume > 0f) preferences.volume
+        else 1.0f
+    }
+
+    fun saveImmediate() {
+        savePreferences(0L)
     }
 
     private val _players: MutableList<AudioPlaybackConfigurationProxy> = mutableStateListOf()
@@ -185,40 +193,100 @@ data class App(
 
             _isPlayer = value
             preferences.isPlayer = value
-            savePreferences()
+            savePreferences(0L)
         }
 
     var isPlaying by mutableStateOf(false)
         private set
 
-    private var _volume by mutableFloatStateOf(preferences.volume)
-    private var _isMutedByAppOps = false
+    private var _isMuted by mutableStateOf(preferences.muted || preferences.volume == 0f)
+    var isMuted: Boolean
+        get() = _isMuted
+        private set(value) {
+            _isMuted = value
+        }
 
-    var volume
+    private var _savedVolume by mutableFloatStateOf(
+        if (preferences.savedVolume > 0f) preferences.savedVolume
+        else if (preferences.volume > 0f) preferences.volume
+        else 1.0f
+    )
+    var savedVolume: Float
+        get() = _savedVolume
+        private set(value) {
+            _savedVolume = value
+        }
+
+    private var _volume by mutableFloatStateOf(preferences.volume)
+
+    var volume: Float
         get() = _volume
         set(value) {
-            if (value == _volume) {
+            val clamped = value.coerceIn(0f, 1f)
+            if (_volume == clamped) {
                 return
             }
 
-            applyVolume(value)
+            _volume = clamped
+            preferences.volume = clamped
 
-            // Apply volume via root service (reliable on MIUI where client-side IPlayer.setVolume may not work)
-            volumeCallback?.invoke(packageName, value)
-
-            // Use AppOps to mute/unmute (works on MIUI where IPlayer.setVolume doesn't)
-            if (value == 0f && !_isMutedByAppOps) {
-                _isMutedByAppOps = true
-                muteCallback?.invoke(packageName, true)
-            } else if (value > 0f && _isMutedByAppOps) {
-                _isMutedByAppOps = false
-                muteCallback?.invoke(packageName, false)
+            if (clamped > 0f) {
+                _savedVolume = clamped
+                preferences.savedVolume = clamped
+                if (_isMuted) {
+                    _isMuted = false
+                    preferences.muted = false
+                    muteCallback?.invoke(packageName, false)
+                }
+            } else {
+                if (!_isMuted) {
+                    _isMuted = true
+                    preferences.muted = true
+                    muteCallback?.invoke(packageName, true)
+                }
             }
 
-            _volume = value
-            preferences.volume = value
-            savePreferences()
+            applyVolume(clamped)
+            volumeCallback?.invoke(packageName, clamped)
+            savePreferences(300L)
         }
+
+    fun toggleMute() {
+        if (_isMuted) {
+            unmute()
+        } else {
+            mute()
+        }
+    }
+
+    fun mute() {
+        if (_volume > 0f) {
+            _savedVolume = _volume
+            preferences.savedVolume = _volume
+        }
+        _isMuted = true
+        preferences.muted = true
+        _volume = 0f
+        preferences.volume = 0f
+
+        applyVolume(0f)
+        volumeCallback?.invoke(packageName, 0f)
+        muteCallback?.invoke(packageName, true)
+        savePreferences(0L)
+    }
+
+    fun unmute() {
+        val restoreVol = if (_savedVolume > 0f) _savedVolume else 1.0f
+        _isMuted = false
+        preferences.muted = false
+        _volume = restoreVol
+        preferences.volume = restoreVol
+
+        applyVolume(restoreVol)
+        volumeCallback?.invoke(packageName, restoreVol)
+        muteCallback?.invoke(packageName, false)
+        savePreferences(0L)
+    }
 
     private var _hidden by mutableStateOf(preferences.hidden)
     var hidden: Boolean
@@ -230,7 +298,7 @@ data class App(
 
             _hidden = value
             preferences.hidden = value
-            savePreferences()
+            savePreferences(0L)
         }
 
     private var _pinned by mutableStateOf(preferences.pinned)
@@ -243,7 +311,7 @@ data class App(
 
             _pinned = value
             preferences.pinned = value
-            savePreferences()
+            savePreferences(0L)
         }
 
     private var _disableVolumeButtons by mutableStateOf(preferences.disableVolumeButtons)
@@ -256,6 +324,6 @@ data class App(
 
             _disableVolumeButtons = value
             preferences.disableVolumeButtons = value
-            savePreferences()
+            savePreferences(0L)
         }
 }

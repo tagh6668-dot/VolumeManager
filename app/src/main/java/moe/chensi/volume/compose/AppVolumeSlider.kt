@@ -45,7 +45,11 @@ fun AppVolumeSlider(
             onValueChange = { value ->
                 app.volume = value
                 onChange?.invoke()
-            }) {
+            },
+            onValueChangeFinished = {
+                app.saveImmediate()
+            }
+        ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -79,6 +83,17 @@ fun AppVolumeSlider(
                     maxLines = 1,
                 )
             }
+        }
+
+        ToggleButton(
+            checked = app.isMuted,
+            checkedIcon = Icons.AutoMirrored.Filled.VolumeOff,
+            checkedDescription = "Unmute app",
+            uncheckedIcon = Icons.AutoMirrored.Filled.VolumeUp,
+            uncheckedDescription = "Mute app"
+        ) {
+            app.toggleMute()
+            onChange?.invoke()
         }
 
         ToggleButton(

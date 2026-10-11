@@ -1,11 +1,14 @@
 package moe.chensi.volume.data
 
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -50,7 +53,7 @@ class AppPreferencesStore(private val dataStore: DataStore<Preferences>) {
         }
 
         if (changed) {
-            save()
+            save(0L)
         }
     }
 
@@ -67,7 +70,7 @@ class AppPreferencesStore(private val dataStore: DataStore<Preferences>) {
             }
 
             if (changed) {
-                save()
+                save(0L)
             }
         }
 
@@ -76,16 +79,20 @@ class AppPreferencesStore(private val dataStore: DataStore<Preferences>) {
 
         scope.launch {
             dataStore.data.collect { preferences ->
-                val valueJson = preferences[key]
-                if (valueJson != null) {
-                    synchronized(lock) {
-                        state = json.decodeFromString<SerializedState>(valueJson)
+                if (first) {
+                    val valueJson = preferences[key]
+                    if (valueJson != null) {
+                        synchronized(lock) {
+                            try {
+                                state = json.decodeFromString<SerializedState>(valueJson)
+                            } catch (e: Exception) {
+                                Log.e("AppPreferencesStore", "Failed to decode state", e)
+                            }
+                        }
                     }
+                    onChange(true)
+                    first = false
                 }
-
-                onChange(first)
-                @Suppress("AssignedValueIsNeverRead")
-                first = false
             }
         }
     }
@@ -104,10 +111,28 @@ class AppPreferencesStore(private val dataStore: DataStore<Preferences>) {
         }
     }
 
-    fun save() {
-        scope.launch {
-            dataStore.edit { preferences ->
-                preferences[key] = Json.encodeToString(state)
+    private var saveJob: Job? = null
+
+    fun save(debounceMs: Long = 300L) {
+        synchronized(lock) {
+            saveJob?.cancel()
+            val jsonString = try {
+                json.encodeToString(state)
+            } catch (e: Exception) {
+                Log.e("AppPreferencesStore", "Failed to encode state", e)
+                return
+            }
+            saveJob = scope.launch {
+                if (debounceMs > 0) {
+                    delay(debounceMs)
+                }
+                try {
+                    dataStore.edit { preferences ->
+                        preferences[key] = jsonString
+                    }
+                } catch (e: Exception) {
+                    Log.e("AppPreferencesStore", "Failed to save state", e)
+                }
             }
         }
     }

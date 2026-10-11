@@ -120,7 +120,7 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
                     packageInfo,
                     packageManager.loadLabel(appInfo),
                     appPreferencesStore.getOrCreate(packageInfo.packageName),
-                    appPreferencesStore::save
+                    savePreferences = { debounceMs -> appPreferencesStore.save(debounceMs) }
                 )
                 app.muteCallback = { pkg, mute ->
                     try {
@@ -207,8 +207,26 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
             app.addPlayer(proxy)
         }
 
-        // Apply saved volumes via root service for apps with non-default volume
+        // Apply saved volumes and ensure AppOps audio is unmuted for unmuted apps
         for ((_, app) in apps) {
+            if (app.volume > 0f && !app.isMuted) {
+                try {
+                    rootService?.setAppPlayAudio(app.packageName, true)
+                } catch (e: Exception) {
+                    if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
+                        handleServiceDeath()
+                    }
+                }
+            } else if (app.isMuted || app.volume == 0f) {
+                try {
+                    rootService?.setAppPlayAudio(app.packageName, false)
+                } catch (e: Exception) {
+                    if (e is android.os.DeadObjectException || e is android.os.RemoteException) {
+                        handleServiceDeath()
+                    }
+                }
+            }
+
             if (app.volume != 1f && app.players.isNotEmpty()) {
                 try {
                     rootService?.setAppVolume(app.packageName, app.volume)
@@ -227,17 +245,9 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
 
     private fun start() {
         appPreferencesStore.track { first ->
-            for ((packageName, index) in appPreferencesStore.indices) {
-                if (!first) {
-                    // Replace with new reference
-                    getApp(packageName)?.setPreferences(appPreferencesStore.values[index])
-                }
-            }
-
-            _systemSliderVisibility.clear()
-            _systemSliderVisibility.putAll(appPreferencesStore.systemSliderVisibility)
-
             if (first) {
+                _systemSliderVisibility.clear()
+                _systemSliderVisibility.putAll(appPreferencesStore.systemSliderVisibility)
                 initialize()
             }
         }

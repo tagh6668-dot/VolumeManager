@@ -8,5 +8,7 @@ data class AppPreferences(
     var volume: Float = 1.0f,
     var hidden: Boolean = false,
     var disableVolumeButtons: Boolean = false,
-    var pinned: Boolean = false
+    var pinned: Boolean = false,
+    var muted: Boolean = false,
+    var savedVolume: Float = 1.0f
 )

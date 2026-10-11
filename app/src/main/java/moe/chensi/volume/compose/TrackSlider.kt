@@ -34,6 +34,7 @@ fun TrackSlider(
     onFillColor: Color = MaterialTheme.colorScheme.onPrimary,
     cornerRadius: Dp = 8.dp,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    onValueChangeFinished: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit = {}
 ) {
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
@@ -60,10 +61,19 @@ fun TrackSlider(
                     var startValue = 0f
                     var startX = 0f
 
-                    detectHorizontalDragGestures(onDragStart = { offset ->
-                        startValue = latestValue
-                        startX = offset.x
-                    }) { change, _ ->
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            startValue = latestValue
+                            startX = offset.x
+                        },
+                        onDragEnd = {
+                            onValueChangeFinished?.invoke()
+                        },
+                        onDragCancel = {
+                            onValueChangeFinished?.invoke()
+                        }
+                    ) { change, _ ->
+                        change.consume()
                         val dragAmount = change.position.x - startX
                         val changedPercentage = dragAmount / size.width.toFloat()
                         val totalRange = valueRange.endInclusive - valueRange.start
