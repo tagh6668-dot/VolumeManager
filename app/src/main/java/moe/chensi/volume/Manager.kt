@@ -39,8 +39,10 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
         private set
 
     fun handleServiceDeath() {
+        Log.w(TAG, "Root service died, scheduling reconnect...")
         rootService = null
-        _rootStatus = RootStatus.Denied
+        _rootStatus = RootStatus.Checking
+        connectRoot(context)
     }
 
     private val rootConnection = object : android.content.ServiceConnection {
@@ -207,8 +209,11 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
             app.addPlayer(proxy)
         }
 
-        // Apply saved volumes and ensure AppOps audio is unmuted for unmuted apps
-        for ((_, app) in apps) {
+        // Apply saved volumes and ensure AppOps audio state only for apps with active players
+        for (app in apps.values) {
+            if (app.players.isEmpty()) {
+                continue
+            }
             if (app.volume > 0f && !app.isMuted) {
                 try {
                     rootService?.setAppPlayAudio(app.packageName, true)
@@ -227,7 +232,7 @@ class Manager(context: Context, dataStore: DataStore<Preferences>) {
                 }
             }
 
-            if (app.volume != 1f && app.players.isNotEmpty()) {
+            if (app.volume != 1f) {
                 try {
                     rootService?.setAppVolume(app.packageName, app.volume)
                 } catch (e: Exception) {

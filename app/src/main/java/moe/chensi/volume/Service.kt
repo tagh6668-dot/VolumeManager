@@ -113,9 +113,7 @@ class Service : AccessibilityService() {
 
         fun startRepeatAdjustVolume(direction: Int) {
             repeatAdjustVolumeDirection = direction
-            if (view != null) {
-                adjustVolume()
-            }
+            adjustVolume()
             postDelayed(repeatAdjustVolumeRunnable, AUTO_REPEAT_INITIAL_DELAY)
         }
 
@@ -159,11 +157,15 @@ class Service : AccessibilityService() {
                 Log.i(TAG, "onAttachedToWindow manufacturer: ${Build.MANUFACTURER}")
 
                 @Suppress("SpellCheckingInspection") if (windowManager.isCrossWindowBlurEnabled && isHardwareAccelerated && Build.MANUFACTURER != "realme") {
-                    background =
-                        Reflect.on(rootSurfaceControl).call("createBackgroundBlurDrawable").apply {
-                            call("setBlurRadius", 200)
-                            call("setCornerRadius", 40f)
-                        }.get()
+                    try {
+                        background =
+                            Reflect.on(rootSurfaceControl).call("createBackgroundBlurDrawable").apply {
+                                call("setBlurRadius", 200)
+                                call("setCornerRadius", 40f)
+                            }.get()
+                    } catch (e: Throwable) {
+                        Log.w(TAG, "Failed to create background blur drawable", e)
+                    }
                 }
 
                 this@Service.handler.startIdleTimer()
@@ -222,7 +224,10 @@ class Service : AccessibilityService() {
             WindowManager.LayoutParams.WRAP_CONTENT, // Width
             WindowManager.LayoutParams.WRAP_CONTENT, // Height
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT // Make the background translucent
         ).apply {
             gravity = Gravity.CENTER // Center the view
@@ -326,7 +331,15 @@ class Service : AccessibilityService() {
         Log.i(TAG, "onServiceConnected done ${serviceInfo.capabilities.toString(2)}")
     }
 
+    private var foregroundPackage: String? = null
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            val pkg = event.packageName?.toString()
+            if (!pkg.isNullOrEmpty() && pkg != packageName) {
+                foregroundPackage = pkg
+            }
+        }
     }
 
     override fun onInterrupt() {
@@ -356,24 +369,28 @@ class Service : AccessibilityService() {
             return false
         }
 
-        // Ignore if Root is not ready
-        if (manager.rootStatus != Manager.RootStatus.Connected) {
-            return false
+        // Determine foreground package without blocking cross-process IPC
+        val fgApp = foregroundPackage ?: rootInActiveWindow?.packageName?.toString() ?: try {
+            activityTaskManager.getForegroundTask()?.app
+        } catch (e: Exception) {
+            null
         }
+        Log.i(TAG, "onKeyEvent foreground app: $fgApp")
 
-        // Check foreground task ignorance list
-        val task = activityTaskManager.getForegroundTask()
-        Log.i(TAG, "onKeyEvent foreground task: $task")
-
-        if (task != null) {
-            if (task.app == "com.android.camera" || task.app.lowercase().contains("camera")) {
+        if (fgApp != null) {
+            if (fgApp == "com.android.camera" || fgApp.lowercase().contains("camera")) {
                 Log.i(TAG, "Camera app in foreground, bypassing volume button interception")
                 return false
             }
-            val app = manager.apps[task.app]
+            val app = manager.apps[fgApp]
             if (app != null && app.disableVolumeButtons) {
                 return false
             }
+        }
+
+        // If root is checking or denied, trigger reconnect in background but continue intercepting volume keys
+        if (manager.rootStatus != Manager.RootStatus.Connected) {
+            manager.connectRoot(this)
         }
 
         when (event.action) {

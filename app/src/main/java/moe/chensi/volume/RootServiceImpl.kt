@@ -132,10 +132,17 @@ class RootServiceImpl : RootService() {
             try {
                 val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
                 val uid = packageManager.getPackageUid(packageName, 0)
-                val mode = if (allow) AppOpsManager.MODE_ALLOWED else AppOpsManager.MODE_IGNORED
+                val targetMode = if (allow) AppOpsManager.MODE_ALLOWED else AppOpsManager.MODE_IGNORED
                 // OP_PLAY_AUDIO = 28
-                Reflect.on(appOps).call("setMode", 28, uid, packageName, mode)
-                Log.d(TAG, "setAppPlayAudio: $packageName allow=$allow uid=$uid mode=$mode - SUCCESS")
+                val currentMode = try {
+                    Reflect.on(appOps).call("checkOpNoThrow", 28, uid, packageName).get<Int>()
+                } catch (e: Exception) {
+                    null
+                }
+                if (currentMode != targetMode) {
+                    Reflect.on(appOps).call("setMode", 28, uid, packageName, targetMode)
+                    Log.d(TAG, "setAppPlayAudio: $packageName allow=$allow uid=$uid mode=$targetMode - SUCCESS")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "setAppPlayAudio FAILED for $packageName allow=$allow", e)
             }
