@@ -21,7 +21,7 @@ import moe.chensi.volume.system.PackageManagerProxy
 import org.joor.Reflect
 
 @SuppressLint("PrivateApi")
-class Manager(context: Context, dataStore: DataStore<Preferences>) {
+class Manager(private val context: Context, dataStore: DataStore<Preferences>) {
 
     companion object {
         private const val TAG = "AppVolManager"
