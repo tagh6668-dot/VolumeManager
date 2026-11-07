@@ -3,6 +3,10 @@ package moe.chensi.volume
 import android.accessibilityservice.AccessibilityButtonController
 import android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.pm.PackageManager
+import android.hardware.camera2.CameraManager
+import android.provider.MediaStore
 import android.animation.Animator
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
@@ -307,11 +311,129 @@ class Service : AccessibilityService() {
         }
     }
 
+    private val cameraManager by lazy {
+        getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    }
+
+    @Volatile
+    private var isCameraInUse = false
+    private val openCameras = mutableSetOf<String>()
+
+    private val cameraCallback = object : CameraManager.AvailabilityCallback() {
+        override fun onCameraUnavailable(cameraId: String) {
+            synchronized(openCameras) {
+                openCameras.add(cameraId)
+                isCameraInUse = openCameras.isNotEmpty()
+            }
+            Log.i(TAG, "Camera $cameraId unavailable (active), isCameraInUse=$isCameraInUse")
+        }
+
+        override fun onCameraAvailable(cameraId: String) {
+            synchronized(openCameras) {
+                openCameras.remove(cameraId)
+                isCameraInUse = openCameras.isNotEmpty()
+            }
+            Log.i(TAG, "Camera $cameraId available (closed), isCameraInUse=$isCameraInUse")
+        }
+    }
+
+    private val knownCameraPackages = mutableSetOf<String>()
+
+    private fun refreshKnownCameraPackages() {
+        try {
+            val intents = listOf(
+                Intent(MediaStore.ACTION_IMAGE_CAPTURE),
+                Intent(MediaStore.ACTION_IMAGE_CAPTURE_SECURE),
+                Intent(MediaStore.ACTION_VIDEO_CAPTURE),
+                Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA),
+                Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE),
+                Intent(MediaStore.INTENT_ACTION_VIDEO_CAMERA),
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CAMERA)
+            )
+            val pkgs = mutableSetOf<String>()
+            for (intent in intents) {
+                val list = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    packageManager.queryIntentActivities(
+                        intent,
+                        PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong())
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    packageManager.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+                }
+                for (resolveInfo in list) {
+                    resolveInfo.activityInfo?.packageName?.let { pkgs.add(it) }
+                }
+            }
+            synchronized(knownCameraPackages) {
+                knownCameraPackages.clear()
+                knownCameraPackages.addAll(pkgs)
+            }
+            Log.i(TAG, "Discovered camera packages: $knownCameraPackages")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to refresh camera packages", e)
+        }
+    }
+
+    private fun isCameraApp(packageName: String?, className: String? = null): Boolean {
+        if (packageName.isNullOrEmpty()) return false
+        val pkgLower = packageName.lowercase()
+
+        synchronized(knownCameraPackages) {
+            if (knownCameraPackages.contains(packageName)) return true
+        }
+
+        // Common camera package indicators
+        if (pkgLower.contains("camera") ||
+            pkgLower.contains(".cam") ||
+            pkgLower.endsWith(".cam") ||
+            pkgLower.contains("snapcam") ||
+            pkgLower.contains("aperture") ||
+            pkgLower.contains("photopro") ||
+            pkgLower.contains("cinemapro") ||
+            pkgLower.contains("videopro") ||
+            pkgLower.contains("proshot") ||
+            pkgLower.contains("hedgecam") ||
+            pkgLower.contains("filmic") ||
+            pkgLower.contains("blackmagiccam") ||
+            pkgLower.contains("gcam") ||
+            pkgLower == "com.samsung.android.scan3d" ||
+            pkgLower == "com.android.camera" ||
+            pkgLower == "com.android.camera2"
+        ) {
+            return true
+        }
+
+        if (className != null) {
+            val clsLower = className.lowercase()
+            if (clsLower.contains("camera") ||
+                clsLower.contains("photo") ||
+                clsLower.contains("viewfinder") ||
+                clsLower.contains("capture") ||
+                clsLower.contains("shutter")
+            ) {
+                return true
+            }
+        }
+
+        return false
+    }
+
     override fun onServiceConnected() {
         Log.i(TAG, "onServiceConnected")
 
         val application = super.getApplication() as MyApplication
         manager = application.manager
+
+        try {
+            val info = serviceInfo ?: AccessibilityServiceInfo()
+            info.flags = info.flags or
+                AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            serviceInfo = info
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update serviceInfo flags", e)
+        }
 
         try {
             accessibilityButtonController.registerAccessibilityButtonCallback(object :
@@ -328,16 +450,42 @@ class Service : AccessibilityService() {
 
         registerReceiver(broadcastReceiver, IntentFilter(ACTION_SHOW_VIEW), RECEIVER_NOT_EXPORTED)
 
+        try {
+            cameraManager.registerAvailabilityCallback(cameraCallback, handler)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register camera availability callback", e)
+        }
+
+        Thread {
+            refreshKnownCameraPackages()
+        }.start()
+
         Log.i(TAG, "onServiceConnected done ${serviceInfo.capabilities.toString(2)}")
     }
 
     private var foregroundPackage: String? = null
+    private var foregroundActivity: String? = null
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            val pkg = event.packageName?.toString()
-            if (!pkg.isNullOrEmpty() && pkg != packageName) {
-                foregroundPackage = pkg
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                val pkg = event.packageName?.toString()
+                if (!pkg.isNullOrEmpty() && pkg != packageName) {
+                    foregroundPackage = pkg
+                    foregroundActivity = event.className?.toString()
+                }
+            }
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
+                try {
+                    val rootNode = rootInActiveWindow
+                    val pkg = rootNode?.packageName?.toString()
+                    if (!pkg.isNullOrEmpty() && pkg != packageName) {
+                        foregroundPackage = pkg
+                        foregroundActivity = rootNode.className?.toString()
+                    }
+                } catch (e: Exception) {
+                    // Ignored
+                }
             }
         }
     }
@@ -353,36 +501,104 @@ class Service : AccessibilityService() {
 
         Toast.makeText(this, "Accessibility service died!", Toast.LENGTH_SHORT).show()
 
+        try {
+            cameraManager.unregisterAvailabilityCallback(cameraCallback)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to unregister camera availability callback", e)
+        }
+
         unregisterReceiver(broadcastReceiver)
     }
 
     val activityTaskManager by lazy { ActivityTaskManagerProxy(this) }
 
-    override fun onKeyEvent(event: KeyEvent): Boolean {
-        Log.i(
-            TAG,
-            "onKeyEvent action = ${event.action}, key code = ${event.keyCode}, root permission = ${manager.rootStatus}"
-        )
+    private data class ForegroundInfo(val packageName: String?, val className: String?)
 
+    private fun getForegroundApp(): ForegroundInfo {
+        // 1. Check rootInActiveWindow (direct, in-process active window)
+        try {
+            val rootNode = rootInActiveWindow
+            val rootPkg = rootNode?.packageName?.toString()
+            val rootCls = rootNode?.className?.toString()
+            if (!rootPkg.isNullOrEmpty() && rootPkg != packageName) {
+                foregroundPackage = rootPkg
+                foregroundActivity = rootCls
+                return ForegroundInfo(rootPkg, rootCls)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to inspect rootInActiveWindow", e)
+        }
+
+        // 2. Check windows list (active or focused window)
+        try {
+            val activeWindow = windows.find { it.isActive || it.isFocused }
+            val winPkg = activeWindow?.root?.packageName?.toString()
+            val winCls = activeWindow?.root?.className?.toString()
+            if (!winPkg.isNullOrEmpty() && winPkg != packageName) {
+                foregroundPackage = winPkg
+                foregroundActivity = winCls
+                return ForegroundInfo(winPkg, winCls)
+            }
+        } catch (e: Exception) {
+            // Ignored
+        }
+
+        // 3. Fallback to activityTaskManager (authoritative top task from OS via root)
+        try {
+            val task = activityTaskManager.getForegroundTask()
+            if (task != null && task.app.isNotEmpty()) {
+                foregroundPackage = task.app
+                foregroundActivity = task.activityName.className
+                return ForegroundInfo(task.app, task.activityName.className)
+            }
+        } catch (e: Exception) {
+            // Ignored
+        }
+
+        // 4. Fallback to cached foreground info from accessibility events
+        return ForegroundInfo(foregroundPackage, foregroundActivity)
+    }
+
+    private fun isCameraActiveInForeground(info: ForegroundInfo): Boolean {
+        // A. Foreground package or activity is recognized as camera
+        if (isCameraApp(info.packageName, info.className)) {
+            return true
+        }
+
+        // B. Active camera hardware sensor is open and device is not in a phone/VoIP call
+        if (isCameraInUse) {
+            val inCall = manager.audioManager.mode == AudioManager.MODE_IN_COMMUNICATION ||
+                         manager.audioManager.mode == AudioManager.MODE_IN_CALL
+            if (!inCall) {
+                Log.i(TAG, "Camera sensor in use and not in call, bypassing volume keys")
+                return true
+            }
+        }
+
+        return false
+    }
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
         // Only handle `VOLUME_UP` and `VOLUME_DOWN`
         if (event.keyCode != KeyEvent.KEYCODE_VOLUME_UP && event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) {
             return false
         }
 
-        // Determine foreground package without blocking cross-process IPC
-        val fgApp = foregroundPackage ?: rootInActiveWindow?.packageName?.toString() ?: try {
-            activityTaskManager.getForegroundTask()?.app
-        } catch (e: Exception) {
-            null
-        }
-        Log.i(TAG, "onKeyEvent foreground app: $fgApp")
+        val fgInfo = getForegroundApp()
+        Log.i(
+            TAG,
+            "onKeyEvent action = ${event.action}, key code = ${event.keyCode}, fgPkg = ${fgInfo.packageName}, fgCls = ${fgInfo.className}, cameraInUse = $isCameraInUse"
+        )
 
-        if (fgApp != null) {
-            if (fgApp == "com.android.camera" || fgApp.lowercase().contains("camera")) {
-                Log.i(TAG, "Camera app in foreground, bypassing volume button interception")
-                return false
-            }
-            val app = manager.apps[fgApp]
+        // Bypass volume button interception for camera (allows taking photo/recording video)
+        if (isCameraActiveInForeground(fgInfo)) {
+            Log.i(TAG, "Camera active in foreground, bypassing volume button interception")
+            return false
+        }
+
+        val fgPkg = fgInfo.packageName
+        if (fgPkg != null) {
+            val app = manager.apps[fgPkg]
             if (app != null && app.disableVolumeButtons) {
                 return false
             }

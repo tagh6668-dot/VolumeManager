@@ -42,8 +42,16 @@ class RootServiceImpl : RootService() {
 
         override fun getForegroundTask(): ComponentName? {
             return try {
-                val atm = getSystemService("activity_task") ?: return null
-                val tasks = Reflect.on(atm).call("getTasks", 1).get<List<ActivityManager.RunningTaskInfo>>()
+                val atm = getSystemService("activity_task")
+                if (atm != null) {
+                    val tasks = Reflect.on(atm).call("getTasks", 1).get<List<ActivityManager.RunningTaskInfo>?>()
+                    if (!tasks.isNullOrEmpty()) {
+                        return tasks[0].topActivity
+                    }
+                }
+                val am = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                @Suppress("DEPRECATION")
+                val tasks = am?.getRunningTasks(1)
                 if (!tasks.isNullOrEmpty()) {
                     tasks[0].topActivity
                 } else {
