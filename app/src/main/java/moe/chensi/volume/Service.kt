@@ -348,7 +348,7 @@ class Service : AccessibilityService() {
                 Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA),
                 Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE),
                 Intent(MediaStore.INTENT_ACTION_VIDEO_CAMERA),
-                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_CAMERA)
+                Intent(Intent.ACTION_MAIN).addCategory("android.intent.category.APP_CAMERA")
             )
             val pkgs = mutableSetOf<String>()
             for (intent in intents) {
